@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Job Report System</title>
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+
+        textarea {
+            resize: none;
+        }
+
+        table input,
+        table select {
+            width: 100%;
+        }
+
+        .table td,
+        .table th {
+            user-select: text;
+            cursor: text;
+        }
+
+        .card {
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 8px 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 5px;
+            margin-top: 20px;
+            margin-bottom: 15px;
+        }
+
+        .count-badge {
+            background: rgba(255, 255, 255, 0.3);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container my-4">
+
+        <!-- ENTRY PAGE -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white fw-bold">
+                📝 Entry Page
+            </div>
+            <div class="card-body">
+                <label class="form-label">Job No (comma / new line separated)</label>
+                <textarea id="jobInput" class="form-control" rows="3"
+                    placeholder="GMSC-25-08926, GMSC-25-08927"></textarea>
+                <button id="addBtn" class="btn btn-primary mt-3">Add to Report</button>
+            </div>
+        </div>
+
+        <!-- REPORT PAGE -->
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>📊 Report Page</strong>
+                    <span id="totalCount" class="badge bg-light text-dark ms-2"></span>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-light me-2" id="copyBtn">
+                        📋 Copy to Clipboard
+                    </button>
+                    <button class="btn btn-sm btn-outline-light me-2" id="printBtn">
+                        🖨️ Print
+                    </button>
+                    <button class="btn btn-sm btn-success" id="excelBtn">
+                        📊 Export Excel
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+
+                <!-- EVEN JOBS SECTION -->
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="section-title flex-grow-1">
+                        📗 Even Job Numbers <span id="evenCount" class="count-badge"></span>
+                    </div>
+                    <button class="btn btn-danger btn-sm ms-2" id="deleteEvenBtn">
+                        🗑️ Delete All Even
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle">
+                        <thead class="table-success">
+                            <tr>
+                                <th>SL</th>
+                                <th>Job No</th>
+                                <th>Buyer</th>
+                                <th>WO No</th>
+                                <th>Status</th>
+                                <th>Comments</th>
+                                <th width="180">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="evenTable"></tbody>
+                    </table>
+                </div>
+
+                <!-- ODD JOBS SECTION -->
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="section-title flex-grow-1">
+                        📘 Odd Job Numbers <span id="oddCount" class="count-badge"></span>
+                    </div>
+                    <button class="btn btn-danger btn-sm ms-2" id="deleteOddBtn">
+                        🗑️ Delete All Odd
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle">
+                        <thead class="table-warning">
+                            <tr>
+                                <th>SL</th>
+                                <th>Job No</th>
+                                <th>Buyer</th>
+                                <th>WO No</th>
+                                <th>Status</th>
+                                <th>Comments</th>
+                                <th width="180">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="oddTable"></tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        /* =========================
+   STATE
+========================= */
+        let reports = JSON.parse(localStorage.getItem('jobReports') || '[]');
+
+        /* =========================
+           ELEMENTS
+        ========================= */
+        const jobInput = document.getElementById("jobInput");
+        const addBtn = document.getElementById("addBtn");
+        const evenTable = document.getElementById("evenTable");
+        const oddTable = document.getElementById("oddTable");
+        const printBtn = document.getElementById("printBtn");
+        const excelBtn = document.getElementById("excelBtn");
+        const copyBtn = document.getElementById("copyBtn");
+        const totalCount = document.getElementById("totalCount");
+        const evenCount = document.getElementById("evenCount");
+        const oddCount = document.getElementById("oddCount");
+        const deleteEvenBtn = document.getElementById("deleteEvenBtn");
+        const deleteOddBtn = document.getElementById("deleteOddBtn");
+
+        /* =========================
+           EVENTS
+        ========================= */
+        addBtn.addEventListener("click", addJobs);
+        printBtn.addEventListener("click", printReport);
+        excelBtn.addEventListener("click", exportExcel);
+        copyBtn.addEventListener("click", copyToClipboard);
+        deleteEvenBtn.addEventListener("click", deleteAllEven);
+        deleteOddBtn.addEventListener("click", deleteAllOdd);
+
+        /* =========================
+           FUNCTIONS
+        ========================= */
+        function addJobs() {
+            const jobs = jobInput.value
+                .split(/,|\n/)
+                .map(j => j.trim())
+                .filter(j => j && !reports.some(r => r.jobNo === j));
+
+            jobs.forEach(jobNo => {
+                reports.push({
+                    id: crypto.randomUUID(),
+                    jobNo,
+                    buyer: "",
+                    wo: "",
+                    status: "",
+                    comments: "",
+                    editable: true
+                });
+            });
+
+            jobInput.value = "";
+            saveToLocalStorage();
+            render();
+        }
+
+        function getLastDigit(jobNo) {
+            const digits = jobNo.match(/\d/g);
+            if (!digits || digits.length === 0) return 0;
+            return parseInt(digits[digits.length - 1]);
+        }
+
+        function isEven(jobNo) {
+            return getLastDigit(jobNo) % 2 === 0;
+        }
+
+        function render() {
+            evenTable.innerHTML = "";
+            oddTable.innerHTML = "";
+
+            const evenReports = reports.filter(r => isEven(r.jobNo));
+            const oddReports = reports.filter(r => !isEven(r.jobNo));
+
+            // Update counts
+            totalCount.textContent = `Total: ${reports.length}`;
+            evenCount.textContent = `${evenReports.length}`;
+            oddCount.textContent = `${oddReports.length}`;
+
+            // Render even jobs
+            evenReports.forEach((r, index) => {
+                evenTable.appendChild(createRow(r, index + 1));
+            });
+
+            // Render odd jobs
+            oddReports.forEach((r, index) => {
+                oddTable.appendChild(createRow(r, index + 1));
+            });
+        }
+
+        function createRow(r, slNo) {
+            const tr = document.createElement("tr");
+
+            tr.innerHTML = `
+      <td>${slNo}</td>
+      <td class="fw-bold">${r.jobNo}</td>
+
+      ${r.editable ? `
+        <td><input data-field="buyer" value="${r.buyer}"></td>
+        <td><input data-field="wo" value="${r.wo}"></td>
+        <td>
+          <select data-field="status">
+            <option value="">Select</option>
+            <option ${r.status === "Pending" ? "selected" : ""}>Pending</option>
+            <option ${r.status === "Approved" ? "selected" : ""}>Approved</option>
+            <option ${r.status === "Rejected" ? "selected" : ""}>Rejected</option>
+          </select>
+        </td>
+        <td><input data-field="comments" value="${r.comments}"></td>
+      ` : `
+        <td>${r.buyer}</td>
+        <td>${r.wo}</td>
+        <td>${r.status}</td>
+        <td>${r.comments}</td>
+      `}
+
+      <td>
+        ${r.editable
+                    ? `<button class="btn btn-success btn-sm me-1" onclick="saveRow('${r.id}')">Save</button>`
+                    : `<button class="btn btn-warning btn-sm me-1" onclick="editRow('${r.id}')">Edit</button>`
+                }
+        <button class="btn btn-danger btn-sm" onclick="deleteRow('${r.id}')">Delete</button>
+      </td>
+    `;
+            return tr;
+        }
+
+        function saveRow(id) {
+            const report = reports.find(r => r.id === id);
+            const table = isEven(report.jobNo) ? evenTable : oddTable;
+            const row = [...table.rows].find(r => r.querySelector("button")?.getAttribute("onclick")?.includes(id));
+
+            row.querySelectorAll("[data-field]").forEach(el => {
+                report[el.dataset.field] = el.value;
+            });
+
+            report.editable = false;
+            saveToLocalStorage();
+            render();
+        }
+
+        function editRow(id) {
+            const report = reports.find(r => r.id === id);
+            report.editable = true;
+            render();
+        }
+
+        function deleteRow(id) {
+            if (confirm("Are you sure you want to delete this job?")) {
+                reports = reports.filter(r => r.id !== id);
+                saveToLocalStorage();
+                render();
+            }
+        }
+
+        function deleteAllEven() {
+            const evenReports = reports.filter(r => isEven(r.jobNo));
+            if (evenReports.length === 0) {
+                alert("No even jobs to delete!");
+                return;
+            }
+            if (confirm(`Are you sure you want to delete all ${evenReports.length} even jobs?`)) {
+                reports = reports.filter(r => !isEven(r.jobNo));
+                saveToLocalStorage();
+                render();
+            }
+        }
+
+        function deleteAllOdd() {
+            const oddReports = reports.filter(r => !isEven(r.jobNo));
+            if (oddReports.length === 0) {
+                alert("No odd jobs to delete!");
+                return;
+            }
+            if (confirm(`Are you sure you want to delete all ${oddReports.length} odd jobs?`)) {
+                reports = reports.filter(r => isEven(r.jobNo));
+                saveToLocalStorage();
+                render();
+            }
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('jobReports', JSON.stringify(reports));
+        }
+
+        /* =========================
+           COPY TO CLIPBOARD
+        ========================= */
+        function copyToClipboard() {
+            if (!reports.length) {
+                alert("No data to copy");
+                return;
+            }
+
+            const saved = reports.filter(r => !r.editable);
+            const hasSavedData = saved.length > 0;
+
+            const evenReports = reports.filter(r => isEven(r.jobNo));
+            const oddReports = reports.filter(r => !isEven(r.jobNo));
+
+            let text = "";
+
+            // EVEN JOBS
+            text += `EVEN JOB NUMBERS (${evenReports.length} jobs)\n`;
+            
+            if (hasSavedData) {
+                const evenSaved = saved.filter(r => isEven(r.jobNo));
+                text += "SL\tJob No\tBuyer\tWO No\tStatus\tComments\n";
+                evenSaved.forEach((r, i) => {
+                    text += `${i + 1}\t${r.jobNo}\t${r.buyer}\t${r.wo}\t${r.status}\t${r.comments}\n`;
+                });
+            } else {
+                text += "Job No\n";
+                evenReports.forEach(r => {
+                    text += `${r.jobNo}\n`;
+                });
+            }
+
+            // ODD JOBS
+            text += `\nODD JOB NUMBERS (${oddReports.length} jobs)\n`;
+            
+            if (hasSavedData) {
+                const oddSaved = saved.filter(r => !isEven(r.jobNo));
+                text += "SL\tJob No\tBuyer\tWO No\tStatus\tComments\n";
+                oddSaved.forEach((r, i) => {
+                    text += `${i + 1}\t${r.jobNo}\t${r.buyer}\t${r.wo}\t${r.status}\t${r.comments}\n`;
+                });
+            } else {
+                text += "Job No\n";
+                oddReports.forEach(r => {
+                    text += `${r.jobNo}\n`;
+                });
+            }
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert("✅ Copied to clipboard! You can paste it in Excel.");
+            }).catch(() => {
+                alert("❌ Failed to copy to clipboard");
+            });
+        }
+
+        /* =========================
+           PRINT (only saved rows)
+        ========================= */
+        function printReport() {
+            const saved = reports.filter(r => !r.editable);
+            if (!saved.length) {
+                alert("No saved report to print");
+                return;
+            }
+
+            const evenSaved = saved.filter(r => isEven(r.jobNo));
+            const oddSaved = saved.filter(r => !isEven(r.jobNo));
+
+            let html = `
+      <style>
+        body { font-family: Arial, sans-serif; }
+        h3 { color: #333; }
+        h4 { margin-top: 30px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+      </style>
+      <h3>Job Report (Total: ${saved.length} jobs)</h3>
+      
+      <h4 style="color: green;">📗 Even Job Numbers (${evenSaved.length} jobs)</h4>
+      <table>
+        <tr>
+          <th>SL</th><th>Job No</th><th>Buyer</th>
+          <th>WO No</th><th>Status</th><th>Comments</th>
+        </tr>
+    `;
+
+            evenSaved.forEach((r, i) => {
+                html += `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${r.jobNo}</td>
+            <td>${r.buyer}</td>
+            <td>${r.wo}</td>
+            <td>${r.status}</td>
+            <td>${r.comments}</td>
+          </tr>
+        `;
+            });
+
+            html += `</table>
+      
+      <h4 style="color: orange;">📘 Odd Job Numbers (${oddSaved.length} jobs)</h4>
+      <table>
+        <tr>
+          <th>SL</th><th>Job No</th><th>Buyer</th>
+          <th>WO No</th><th>Status</th><th>Comments</th>
+        </tr>
+    `;
+
+            oddSaved.forEach((r, i) => {
+                html += `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${r.jobNo}</td>
+            <td>${r.wo}</td>
+            <td>${r.wo}</td>
+            <td>${r.status}</td>
+            <td>${r.comments}</td>
+          </tr>
+        `;
+            });
+
+            html += `</table>`;
+            const w = window.open("", "", "width=900,height=650");
+            w.document.write(html);
+            w.document.close();
+            w.print();
+        }
+
+        /* =========================
+           EXPORT EXCEL (XLS format)
+        ========================= */
+        function exportExcel() {
+            const saved = reports.filter(r => !r.editable);
+            if (!saved.length) {
+                alert("No saved report to export");
+                return;
+            }
+
+            const evenSaved = saved.filter(r => isEven(r.jobNo));
+            const oddSaved = saved.filter(r => !isEven(r.jobNo));
+
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+
+            // Even Jobs Sheet
+            const evenData = [
+                [`EVEN JOB NUMBERS (${evenSaved.length} jobs)`],
+                ["SL", "Job No", "Buyer", "WO No", "Status", "Comments"]
+            ];
+            evenSaved.forEach((r, i) => {
+                evenData.push([i + 1, r.jobNo, r.buyer, r.wo, r.status, r.comments]);
+            });
+            const evenSheet = XLSX.utils.aoa_to_sheet(evenData);
+            XLSX.utils.book_append_sheet(wb, evenSheet, "Even Jobs");
+
+            // Odd Jobs Sheet
+            const oddData = [
+                [`ODD JOB NUMBERS (${oddSaved.length} jobs)`],
+                ["SL", "Job No", "Buyer", "WO No", "Status", "Comments"]
+            ];
+            oddSaved.forEach((r, i) => {
+                oddData.push([i + 1, r.jobNo, r.buyer, r.wo, r.status, r.comments]);
+            });
+            const oddSheet = XLSX.utils.aoa_to_sheet(oddData);
+            XLSX.utils.book_append_sheet(wb, oddSheet, "Odd Jobs");
+
+            // Export
+            XLSX.writeFile(wb, "job_report.xlsx");
+        }
+
+        /* =========================
+           INITIAL RENDER
+        ========================= */
+        render();
+
+    </script>
+
+</body>
+
+</html>
